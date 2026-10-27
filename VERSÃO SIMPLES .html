@@ -1,0 +1,400 @@
+<!-- ============================================================
+     NÚCLEO DE TREINO — Evoluindo Sozinho BR
+     Exercícios iniciais com degraus por nível, criar e substituir,
+     marcar feito e ganhar XP com decaimento, subir de nível.
+     ============================================================ -->
+	
+	
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#7ef9ff">
+
+<style>
+#tr{max-width:430px;margin:0 auto;padding:14px;font-family:system-ui,sans-serif;
+  color:#7ef9ff;background:#04141a;min-height:100vh;box-sizing:border-box}
+#tr *{box-sizing:border-box}
+.trTit{font-size:9px;letter-spacing:2px;opacity:.6;margin-bottom:3px}
+.trH1{font-size:16px;font-weight:800;margin-bottom:2px}
+.trSub{font-size:10px;opacity:.6;margin-bottom:12px}
+.trTop{background:#08181c;border:1px solid rgba(126,249,255,.35);border-radius:10px;
+  padding:12px;margin-bottom:12px}
+.trXpBar{height:5px;border-radius:3px;background:rgba(126,249,255,.15);
+  overflow:hidden;margin:8px 0 5px}
+.trXpBar i{display:block;height:100%;background:#7ef9ff;transition:width .3s ease}
+.trXpTxt{font-size:10px;opacity:.7;display:flex;justify-content:space-between}
+.trCard{background:#08181c;border:1px solid rgba(126,249,255,.28);border-radius:10px;
+  padding:11px 12px;margin-bottom:8px}
+.trCard.ok{border-color:rgba(125,255,176,.5);background:rgba(125,255,176,.05)}
+.trNome{font-size:13px;font-weight:700;margin-bottom:2px}
+.trMeta{font-size:10px;opacity:.65;margin-bottom:8px}
+.trMeta b{color:#9ffcff;opacity:1}
+.trBtns{display:flex;gap:6px}
+.trBtns button{flex:1 1 0;min-width:0;padding:9px 4px;border-radius:7px;
+  font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.5px;cursor:pointer}
+.trB1{background:#7ef9ff;color:#001014;border:0}
+.trB1:disabled{opacity:.28;cursor:not-allowed}
+.trB2{background:transparent;color:#7ef9ff;border:1px solid rgba(126,249,255,.4)}
+.trNovo{width:100%;margin-top:2px;padding:11px;border-radius:8px;background:transparent;
+  color:#7ef9ff;border:1px dashed rgba(126,249,255,.5);font-family:inherit;
+  font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer}
+.trMsg{font-size:11px;text-align:center;min-height:16px;margin-top:10px;color:#7dffb0}
+.trCat{font-size:9px;letter-spacing:2px;opacity:.55;margin:16px 0 8px}
+</style>
+
+<script>
+/* ============================================================
+   NÚCLEO DE TREINO
+   Guarda em: esb_treino_v1 | esb_treino_cat_v1
+   ============================================================ */
+(function(){
+'use strict';
+
+var K='esb_treino_v1', KC='esb_treino_cat_v1';
+
+/* ---------- DEGRAUS DE REPETIÇÃO ----------
+   nível mínimo de cada degrau, na ordem. */
+var DEGRAUS_REPS=[
+  {n:1,   v:30},
+  {n:6,   v:45},
+  {n:30,  v:70},
+  {n:50,  v:100},
+  {n:75,  v:150},
+  {n:100, v:200},
+  {n:250, v:250},
+  {n:300, v:300}
+];
+
+/* ---------- DEGRAUS DE CORRIDA (km) ---------- */
+var DEGRAUS_CORRIDA=[
+  {n:1,   v:5},
+  {n:6,   v:7.5},
+  {n:30,  v:10},
+  {n:50,  v:15},
+  {n:75,  v:20},
+  {n:100, v:25},
+  {n:151, v:30}
+];
+
+function metaPorNivel(nivel, unidade){
+  var tabela = unidade==='km' ? DEGRAUS_CORRIDA : DEGRAUS_REPS;
+  var val = tabela[0].v;
+  for(var i=0;i<tabela.length;i++){
+    if(nivel >= tabela[i].n) val = tabela[i].v;
+  }
+  return val;
+}
+
+/* ---------- XP POR NÍVEL ----------
+   Nv.1→2 = 100 EXP. Cresce 40 por nível. */
+function xpDoNivel(n){ return 100 + (n-1)*40; }
+
+/* ---------- DECAIMENTO DO XP NO DIA ----------
+   1ª missão 100%, 2ª 50%, 3ª 25%, 4ª 12,5%... */
+function fatorXp(qtdFeitas){
+  return Math.max(12.5, 100/Math.pow(2, qtdFeitas))/100;
+}
+
+/* ---------- catálogo inicial ----------
+   Corrida fixa + 3 de repetição, como a regra do app. */
+var CAT_INICIAL=[
+  {id:'corrida',    nome:'Corrida',          unidade:'km',  fixo:true,  ativo:true},
+  {id:'flexao',     nome:'Flexão de braço',  unidade:'rep', fixo:false, ativo:true},
+  {id:'abdominal',  nome:'Abdominal',        unidade:'rep', fixo:false, ativo:true},
+  {id:'agachamento',nome:'Agachamento',      unidade:'rep', fixo:false, ativo:true}
+];
+
+var CAT_RESERVA=[
+  {id:'barra',   nome:'Barra fixa',   unidade:'rep'},
+  {id:'remada',  nome:'Remada',       unidade:'rep'},
+  {id:'burpe',   nome:'Burpe',        unidade:'rep'},
+  {id:'prancha', nome:'Prancha',      unidade:'rep'}
+];
+
+/* ---------- armazenamento ---------- */
+function ler(k){ try{ return JSON.parse(localStorage.getItem(k)||'null'); }catch(e){ return null; } }
+function gravar(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function hoje(){
+  var d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'
+    +String(d.getDate()).padStart(2,'0');
+}
+
+function catalogo(){
+  var c=ler(KC);
+  if(!c){ c=CAT_INICIAL.slice(); gravar(KC,c); }
+  return c;
+}
+function acharEx(id){
+  var c=catalogo();
+  for(var i=0;i<c.length;i++){ if(c[i].id===id) return c[i]; }
+  return null;
+}
+
+/* ---------- estado ---------- */
+function novoEstado(){
+  return { nivel:1, xp:0, xpTotal:0, hoje:{data:hoje(),feitos:[]}, historico:[] };
+}
+function estado(){
+  var e=ler(K);
+  if(!e){ e=novoEstado(); gravar(K,e); return e; }
+  if(!e.hoje || e.hoje.data!==hoje()){
+    if(e.hoje && e.hoje.feitos && e.hoje.feitos.length){
+      e.historico.push({data:e.hoje.data, feitos:e.hoje.feitos.slice()});
+      if(e.historico.length>400) e.historico.shift();
+    }
+    e.hoje={data:hoje(), feitos:[]};
+    gravar(K,e);
+  }
+  return e;
+}
+
+/* ---------- XP da missão ---------- */
+function xpDaMissao(ex, nivel, qtdFeitas){
+  var meta = metaPorNivel(nivel, ex.unidade);
+  /* base = 10 + meta; corrida vale o dobro por km */
+  var base = ex.unidade==='km' ? 10 + meta*2 : 10 + meta;
+  var ganho = Math.round(base * fatorXp(qtdFeitas));
+  return Math.max(1, ganho);
+}
+
+function subirNivel(e){
+  var subiu=0;
+  while(e.xp >= xpDoNivel(e.nivel)){
+    e.xp -= xpDoNivel(e.nivel);
+    e.nivel += 1;
+    subiu += 1;
+    if(e.nivel>500) break;
+  }
+  return subiu;
+}
+
+/* ---------- ações ---------- */
+function marcarFeito(id){
+  var e=estado();
+  if(e.hoje.feitos.indexOf(id)!==-1) return {ok:false, msg:'Já concluída hoje.'};
+  var ex=acharEx(id);
+  if(!ex) return {ok:false, msg:'Exercício não encontrado.'};
+
+  var ganho=xpDaMissao(ex, e.nivel, e.hoje.feitos.length);
+  e.xp+=ganho; e.xpTotal+=ganho; e.hoje.feitos.push(id);
+  var niveis=subirNivel(e);
+  gravar(K,e);
+
+  var msg = niveis>0
+    ? '+'+ganho+' EXP — SUBIU PARA O NÍVEL '+e.nivel+'!'
+    : '+'+ganho+' EXP';
+  return {ok:true, xp:ganho, nivel:e.nivel, subiu:niveis, msg:msg};
+}
+
+function criarExercicio(nome, unidade){
+  var n=String(nome||'').trim();
+  if(n.length<3) return {ok:false, msg:'Nome precisa de 3 letras.'};
+
+  var id=n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  if(!id) return {ok:false, msg:'Nome inválido.'};
+
+  var c=catalogo();
+  for(var i=0;i<c.length;i++){
+    if(c[i].id===id) return {ok:false, msg:'Esse exercício já existe.'};
+  }
+  c.push({id:id, nome:n, unidade:(unidade==='km'?'km':'rep'), fixo:false, ativo:true});
+  gravar(KC,c);
+  return {ok:true, msg:'Exercício criado.'};
+}
+
+function substituir(alvoId, novoId){
+  var e=estado();
+  var alvo=acharEx(alvoId), novo=acharEx(novoId);
+  if(!alvo||!novo) return {ok:false, msg:'Exercício não encontrado.'};
+  if(alvoId===novoId) return {ok:false, msg:'Escolha outro exercício.'};
+  if(alvo.fixo) return {ok:false, msg:'Corrida é fixa e não pode ser substituída.'};
+
+  /* devolve o XP se já tinha sido feita hoje */
+  var i=e.hoje.feitos.indexOf(alvoId);
+  if(i!==-1){
+    var devolver=xpDaMissao(alvo, e.nivel, i);
+    e.xp=Math.max(0,e.xp-devolver);
+    e.xpTotal=Math.max(0,e.xpTotal-devolver);
+    e.hoje.feitos.splice(i,1);
+  }
+
+  var c=catalogo();
+  for(var j=0;j<c.length;j++){
+    if(c[j].id===alvoId) c[j].ativo=false;
+    if(c[j].id===novoId) c[j].ativo=true;
+  }
+  gravar(KC,c);
+  gravar(K,e);
+  return {ok:true, msg:'Agora é '+novo.nome+'.'};
+}
+
+/* ---------- tela ---------- */
+function msg(txt,ok){
+  var m=document.getElementById('trMsg');
+  if(!m) return;
+  m.textContent=txt||'';
+  m.style.color = ok===false ? '#ff8f6b' : '#7dffb0';
+}
+
+function desenhar(){
+  var box=document.getElementById('tr');
+  if(!box) return;
+
+  var e=estado();
+  var c=catalogo().filter(function(x){ return x.ativo; });
+  box.innerHTML='';
+
+  var t=document.createElement('div'); t.className='trTit';
+  t.textContent='CICLO DIÁRIO DE TREINO';
+  box.appendChild(t);
+
+  var h=document.createElement('div'); h.className='trH1';
+  h.textContent='NÍVEL '+e.nivel;
+  box.appendChild(h);
+
+  var s=document.createElement('div'); s.className='trSub';
+  s.textContent=e.hoje.feitos.length+' de '+c.length+' concluídas hoje';
+  box.appendChild(s);
+
+  var top=document.createElement('div'); top.className='trTop';
+  var bar=document.createElement('div'); bar.className='trXpBar';
+  var fi=document.createElement('i');
+  fi.style.width=Math.min(100, Math.round(e.xp/xpDoNivel(e.nivel)*100))+'%';
+  bar.appendChild(fi);
+  top.appendChild(bar);
+
+  var txt=document.createElement('div'); txt.className='trXpTxt';
+  var a=document.createElement('span');
+  a.textContent='EXP '+e.xp+' / '+xpDoNivel(e.nivel);
+  var b=document.createElement('span');
+  b.textContent='TOTAL '+e.xpTotal;
+  txt.appendChild(a); txt.appendChild(b);
+  top.appendChild(txt);
+  box.appendChild(top);
+
+  c.forEach(function(ex){
+    var feito = e.hoje.feitos.indexOf(ex.id)!==-1;
+    var meta  = metaPorNivel(e.nivel, ex.unidade);
+    var xpPrev= xpDaMissao(ex, e.nivel, e.hoje.feitos.length);
+
+    var card=document.createElement('div');
+    card.className='trCard'+(feito?' ok':'');
+
+    var nm=document.createElement('div'); nm.className='trNome';
+    nm.textContent=ex.nome + (ex.fixo?' (fixo)':'');
+    card.appendChild(nm);
+
+    var mt=document.createElement('div'); mt.className='trMeta';
+    mt.innerHTML='Meta do nível: <b>'+meta+' '+(ex.unidade==='km'?'km':'reps')
+      +'</b> · vale <b>'+xpPrev+' EXP</b>';
+    card.appendChild(mt);
+
+    var row=document.createElement('div'); row.className='trBtns';
+
+    var b1=document.createElement('button');
+    b1.type='button'; b1.className='trB1';
+    b1.textContent = feito ? 'CONCLUÍDA' : 'MARCAR COMO FEITA';
+    b1.disabled = feito;
+    b1.onclick=function(){
+      var r=marcarFeito(ex.id);
+      desenhar();
+      msg(r.msg, r.ok);
+    };
+    row.appendChild(b1);
+
+    if(!ex.fixo){
+      var b2=document.createElement('button');
+      b2.type='button'; b2.className='trB2';
+      b2.textContent='SUBSTITUIR';
+      b2.onclick=function(){ abrirSubstituir(ex.id); };
+      row.appendChild(b2);
+    }
+
+    card.appendChild(row);
+    box.appendChild(card);
+  });
+
+  var bN=document.createElement('button');
+  bN.type='button'; bN.className='trNovo';
+  bN.textContent='+ CRIAR EXERCÍCIO PRÓPRIO';
+  bN.onclick=abrirCriar;
+  box.appendChild(bN);
+
+  var m=document.createElement('div'); m.className='trMsg'; m.id='trMsg';
+  box.appendChild(m);
+}
+
+function abrirCriar(){
+  var nome=prompt('Nome do exercício:');
+  if(nome===null) return;
+  var u=prompt('Unidade — digite rep ou km:','rep');
+  if(u===null) return;
+  var r=criarExercicio(nome,u);
+  desenhar();
+  msg(r.msg, r.ok);
+}
+
+function abrirSubstituir(id){
+  var c=catalogo().filter(function(x){ return x.id!==id && (!x.ativo || x.id!==id); });
+  var opcoes=[];
+  var vistos={};
+
+  c.forEach(function(x){ if(!vistos[x.id]){ vistos[x.id]=1; opcoes.push(x); } });
+  CAT_RESERVA.forEach(function(r){
+    if(!vistos[r.id]){ vistos[r.id]=1; opcoes.push({id:r.id,nome:r.nome,reserva:true}); }
+  });
+
+  opcoes=opcoes.filter(function(x){ return x.id!==id; });
+  if(!opcoes.length){ msg('Nenhum outro exercício disponível.', false); return; }
+
+  var linhas=opcoes.map(function(x,i){ return (i+1)+' - '+x.nome; }).join('\n');
+  var r=prompt('Substituir por qual exercício?\n\n'+linhas+'\n\nNúmero:');
+  if(r===null) return;
+
+  var i=Number(r)-1;
+  if(isNaN(i)||i<0||i>=opcoes.length){ msg('Número inválido.', false); return; }
+
+  var alvo=opcoes[i];
+  if(alvo.reserva){
+    var c2=catalogo();
+    var existe=false;
+    for(var j=0;j<c2.length;j++){ if(c2[j].id===alvo.id){ existe=true; c2[j].ativo=true; } }
+    if(!existe){
+      c2.push({id:alvo.id, nome:alvo.nome, unidade:'rep', fixo:false, ativo:true});
+      gravar(KC,c2);
+    }
+  }
+  var res=substituir(id, alvo.id);
+  desenhar();
+  msg(res.msg, res.ok);
+}
+
+/* ---------- arranque ---------- */
+function iniciar(){
+  if(!document.getElementById('tr')){
+    var w=document.createElement('div');
+    w.id='tr';
+    document.body.appendChild(w);
+  }
+  desenhar();
+}
+
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',iniciar);
+else iniciar();
+
+window.ESB_TREINO={
+  estado:estado, catalogo:catalogo, meta:metaPorNivel,
+  marcar:marcarFeito, criar:criarExercicio, substituir:substituir,
+  xpDoNivel:xpDoNivel, desenhar:desenhar
+};
+})();
+</script>
+
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){});
+  });
+}
+</script>
